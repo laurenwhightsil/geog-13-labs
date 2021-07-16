@@ -192,7 +192,7 @@ weightedmeancenter = ggplot() +
   theme(axis.title = element_text(color = "gray20", face = "bold")) +
   theme(title = element_text(face = "bold")) +
   theme(plot.subtitle = element_text(color = "gray50", face = "italic"))
-  ggsave(weightedmeancenter, filename = "../img/weightedmeancenter.png", width = 14, height=8)
+  ggsave(weightedmeancenter, filename = "../img/weightedmeancenter.png", width = 15, height=8)
          
 weightedmeancenter
 
