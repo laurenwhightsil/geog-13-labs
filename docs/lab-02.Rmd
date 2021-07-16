@@ -182,16 +182,20 @@ covid_centroids <- inner_join(countycentroids, covid, by = c('fips')) %>% select
 
 weightedmeancenter = ggplot() +
   borders("state", fill="gray80", colour = "white") +
-  geom_point(data = covid_centroids, aes(x= X_weighted_mean, y= Y_weighted_mean, colour = month, size = UScasetotal)) +
+  geom_point(data = covid_centroids, aes(x= X_weighted_mean, y= Y_weighted_mean, color = month, size = UScasetotal)) +
   scale_size("Total US Cases") +
   scale_color_discrete(name = "Year & Month") +
+  theme(legend.position = "right", legend.box = "vertical") +
+  guides(size=guide_legend(nrow = 1)) +
+  guides(color=guide_legend(ncol = 3, byrow = TRUE)) +
   labs(x="Longitude", y="Latitude", title="Mean Center of US COVID-19 Cases", subtitle= paste("As of", max(covid_centroids$date))) +
   theme(axis.title = element_text(color = "gray20", face = "bold")) +
   theme(title = element_text(face = "bold")) +
   theme(plot.subtitle = element_text(color = "gray50", face = "italic"))
-  ggsave(weightedmeancenter, filename = "../img/weightedmeancenter.png", width = 12, height = 7)
+  ggsave(weightedmeancenter, filename = "../img/weightedmeancenter.png", width = 14, height=8)
          
 weightedmeancenter
+
 
 # COVID-19 weighted means originated on the central to west-central United States. As case counts grew on the East Coast, the weighted mean migrated east in March of 2020. During the months of May 2020 to September 2020, the weighted mean migrated southwest due to the spread of the virus into the Southwest and Southeast states. Since October 2020, the weighted mean has remained relatively stationary, as cases of the virus can be found across the USA and there are no longer any single outbreak hot spots far greater than the next.
 ```
