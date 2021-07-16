@@ -1,0 +1,201 @@
+---
+title: "Geography 13"
+author: "[Lauren Whightsil](https://github.com/laurenwhightsil)"
+subtitle: 'Lab 02: COVID-19 Pandemic'
+output:
+  html_document:
+    theme: journal
+---
+
+```{r package-options, warning=FALSE, message=FALSE}
+
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(readxl)
+library(zoo)
+```
+
+# data
+```{r Data, results="hide", warning=FALSE, message=FALSE}
+url = 'https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv'
+covid = read_csv(url)
+landData = read_csv("../data/landdata-states.csv")
+popEst = read_excel("../data/PopulationEstimates.xls", skip=2)
+```
+
+# Question 1
+## Q1 - Tables 1 & 2
+```{r}
+
+state.interest = "California"
+state.interest.abrev = "CA"
+  
+table1 <- covid %>%
+  filter(state== state.interest, date== max(date)) %>%
+  slice_max(cases, n = 5) %>%
+  select(county, date, cases)
+
+  knitr::kable(table1, caption = paste("Counties with the Most Cumulative COVID-19 Cases in", state.interest, "<br>New York Times COVID-19 Data, as of", max(table1$date)), col.names = c("County", "Date", "Total Cases")) %>%
+  kable_styling("striped", full_width = TRUE, font_size = 14)
+
+  
+daily <- covid %>% 
+  filter(state== state.interest) %>%
+  group_by(county) %>%
+  mutate(dailyNewCases = cases - lag(cases)) %>%
+  ungroup()
+
+table2 <- daily %>%
+  filter(date== max(date)) %>%
+  slice_max(dailyNewCases, n = 5) %>%
+  select(county, date, dailyNewCases)
+
+  knitr::kable(table2, caption = paste("Counties with the Most New COVID-19 Cases in", state.interest, "<br>New York Times COVID-19 Data, as of", max(table2$date)), col.names = c("County", "Date", "Daily New Cases")) %>%
+  kable_styling("striped", full_width = TRUE, font_size = 14)
+  
+```
+
+## Q1 - Tables 3 & 4
+```{r}
+popEst_state <- popEst %>% filter(State== state.interest.abrev) %>% select(FIPStxt, State, Area_Name, POP_ESTIMATE_2019)
+
+PerCapitaCases <- inner_join(daily, popEst_state, by = c('fips' = 'FIPStxt')) %>% 
+  select(date, county, fips, cases, deaths, dailyNewCases, POP_ESTIMATE_2019) %>%
+  mutate(CumulativeCasesPerCapita = cases/POP_ESTIMATE_2019*100000) %>%
+  mutate(NewCasesPerCapita = dailyNewCases/POP_ESTIMATE_2019*100000)
+  
+DailyPerCapitaCases <- PerCapitaCases %>% filter(date == max(date))
+
+table3 <- DailyPerCapitaCases %>%
+  slice_max(CumulativeCasesPerCapita, n = 5) %>%
+  select(county, CumulativeCasesPerCapita)
+
+knitr::kable(table3, caption = paste("Counties with the Most Cumulative COVID-19 Cases Per Capita in", state.interest, "<br>New York Times COVID-19 Data & USDA Population Data, as of", max(DailyPerCapitaCases$date)), col.names = c("County","Cumulative Cases Per 100,000 People")) %>%
+  kable_styling("striped", full_width = TRUE, font_size = 14)
+
+  
+table4 <- DailyPerCapitaCases %>%
+  slice_max(dailyNewCases, n=5) %>%
+  select(county, NewCasesPerCapita)
+
+  knitr::kable(table4, caption = paste("Counties with the Most New COVID-19 Cases Per Capita in", state.interest, "<br>New York Times COVID-19 Data & USDA Population Data, as of", max(DailyPerCapitaCases$date)), col.names = c("County", "New Cases Per 100,000 People")) %>%
+  kable_styling("striped", full_width = TRUE, font_size = 14)
+  
+```
+
+## Q1 - Cases over the last 14 days
+```{r}
+start_date <- as.Date(max(PerCapitaCases$date))-13
+past14dates <- seq(start_date, by = "day", length.out = 14)
+
+PerCapita_Past14Days <- PerCapitaCases %>% filter(date %in% past14dates) %>% group_by(county) %>% mutate(FortnightNewCasesPerCapita = sum(NewCasesPerCapita))
+```
+## Q1 - Step 10
+```{r}
+## (1) Total number of cases:
+    # As of 7/13/2021, there are 1260448 cases in the state of California.
+Cases_Past14Days <- PerCapita_Past14Days %>% ungroup() %>% filter(date == max(date))
+StateCases_Past14Days <- Cases_Past14Days %>% summarize(total_cases_by_state = sum(max(cases)))
+
+knitr::kable(StateCases_Past14Days, caption = paste("Total Cases in", state.interest, "<br>As of", max(Cases_Past14Days$date)), col.names = "Cases") %>%
+  kable_styling("striped", font_size = 14)
+  
+## (2) Total number of new cases:
+    # As of 7/13/2021, there have been 26364 new cases in the past 14 days in the state of California.
+CountyNewCases_Past14Days <- PerCapita_Past14Days %>% summarize(fortnightNewCases = sum(dailyNewCases))
+StateNewCases_Past14Days <- CountyNewCases_Past14Days %>% summarize(state_fortnightNewCases = sum(fortnightNewCases))
+
+knitr::kable(StateNewCases_Past14Days, caption = paste("Total New Cases from the Past 14 Days in", state.interest, "<br>As of", max(PerCapita_Past14Days$date)), col.names = "New Cases") %>%
+  kable_styling("striped", font_size = 14)
+
+## (3) Total number of safe counties:
+  # As of 7/13/2021, 48 counties are considered safe.
+Cases_Past14Days %>% count(FortnightNewCasesPerCapita < 100)
+
+```
+
+# Question 2
+## Q2 - Steps 1 & 2
+```{r Steps 1 & 2, warning=FALSE, message=FALSE}
+states.of.interest = c("New York", "NY", "California", "CA", "Louisiana", "LA", "Florida", "FL")
+
+StateLevel <- covid %>% filter(state %in% states.of.interest) %>% group_by(state, date) %>% summarize(cases = sum(cases, na.rm=TRUE)) %>% mutate(dailyNewCases = cases - lag(cases), RollMean7 = rollmean(dailyNewCases, 7, fill=NA, align="right"))
+
+g = ggplot(data=StateLevel, aes(x= date, y= RollMean7)) +
+  geom_line(aes(col=state)) +
+  ggthemes::theme_calc() +
+  labs(x="Date", y="7 Day Rolling Mean Cases", title="COVID-19 Mean Weekly Cases", subtitle= paste("As of", max(StateLevel$date)), caption= "New York Times COVID-19 Data") +
+  facet_wrap(~state) +
+theme(legend.position = "none") +
+  theme(axis.text.x = element_text(color = "gray10"), axis.title.y = element_text(color = "gray10")) +
+  theme(plot.subtitle = element_text(color = "gray10", face = "bold")) +
+  theme(plot.caption = element_text(color = "gray30", face = "italic")) +
+  theme(strip.text = element_text(color = "white", face = "bold")) +
+  theme(strip.background = element_rect(fill = "gray30"))
+  ggsave(g, filename = "../img/FacetPlot_7DayRollMean.png")
+  
+g
+
+```
+
+## Q2 - Steps 3 - 5
+```{r Steps 3 - 5, warning=FALSE, message=FALSE}
+popEst_4states <- popEst %>% filter(Area_Name %in% states.of.interest) %>% select(Area_Name, POP_ESTIMATE_2019)
+
+covid_popEst_4states <- inner_join(StateLevel, popEst_4states, by = c('state' = 'Area_Name')) %>% group_by(state, date) %>%
+  select(state, date, cases, dailyNewCases, RollMean7, POP_ESTIMATE_2019) %>%
+  mutate(NewCasesPerCapita = dailyNewCases/POP_ESTIMATE_2019*100000) %>%       mutate(NewCasesPerCapita_RollMean7 = RollMean7/POP_ESTIMATE_2019*100000)
+
+
+h = ggplot(data=covid_popEst_4states, aes(x= date, y= NewCasesPerCapita_RollMean7)) +
+  geom_line(aes(col=state)) +
+  ggthemes::theme_calc() +
+  labs(x="Date", y="7 Day Rolling Mean New Cases", title="Mean Weekly New COVID-19 Cases, Per Capita", subtitle= paste("As of", max(covid_popEst_4states$date)), caption= "New York Times COVID-19 Data & USDA Population Data") +
+  facet_wrap(~state) +
+  theme(legend.position = "none") +
+  theme(axis.text.x = element_text(color = "gray10"), axis.title.y = element_text(color = "gray10")) +
+  theme(plot.subtitle = element_text(color = "gray10", face = "bold")) +
+  theme(plot.caption = element_text(color = "gray30", face = "italic")) +
+  theme(strip.text = element_text(color = "white", face = "bold")) +
+  theme(strip.background = element_rect(fill = "gray30"))
+  ggsave(h, filename = "../img/FacetPlot_7DayRollMean_NewPerCap.png")
+
+h
+
+## (Question 2 - Step 5)
+#Scaling by population (in the Mean Weekly New COVID-19 Cases, Per Capita) relates the number of new cases to the population in each state. This makes the states with smaller populations, like Louisiana, have a Rolling Mean Case line that is larger and more similar to that of other states. It makes the states with smaller populations look 'worse', and the states with larger populations look 'better' or 'less-extreme'. Without scaling per capita, larger states would simply appear to have more cases. This leaves out the fact that they should have more cases, simply because they have more people, not necessarily because the virus spread more easily or quickly there.
+
+```
+
+# Question 3
+```{r Map, warning=FALSE, message=FALSE}
+library(maps)
+countycentroids = read_csv("../data/county-centroids.csv")
+
+covid_centroids <- inner_join(countycentroids, covid, by = c('fips')) %>% select(X1, fips, date, county, state, LON, LAT, cases) %>%
+  group_by(date) %>%
+  summarize(X_weighted_mean = weighted.mean(LON, cases), Y_weighted_mean = weighted.mean(LAT, cases), UScasetotal = sum(cases)) %>%
+  ungroup() %>%
+  mutate(month = format(date, "%y %m")) %>%
+  ungroup()
+
+weightedmeancenter = ggplot() +
+  borders("state", fill="gray80", colour = "white") +
+  geom_point(data = covid_centroids, aes(x= X_weighted_mean, y= Y_weighted_mean, colour = month, size = UScasetotal)) +
+  scale_size("Total US Cases") +
+  scale_color_discrete(name = "Year & Month") +
+  labs(x="Longitude", y="Latitude", title="Mean Center of US COVID-19 Cases", subtitle= paste("As of", max(covid_centroids$date))) +
+  theme(axis.title = element_text(color = "gray20", face = "bold")) +
+  theme(title = element_text(face = "bold")) +
+  theme(plot.subtitle = element_text(color = "gray50", face = "italic"))
+  ggsave(weightedmeancenter, filename = "../img/weightedmeancenter.png", width = 12, height = 7)
+         
+weightedmeancenter
+
+# COVID-19 weighted means originated on the central to west-central United States. As case counts grew on the East Coast, the weighted mean migrated east in March of 2020. During the months of May 2020 to September 2020, the weighted mean migrated southwest due to the spread of the virus into the Southwest and Southeast states. Since October 2020, the weighted mean has remained relatively stationary, as cases of the virus can be found across the USA and there are no longer any single outbreak hot spots far greater than the next.
+```
+
+
+
+
