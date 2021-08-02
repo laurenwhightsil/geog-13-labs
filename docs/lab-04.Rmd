@@ -1,0 +1,248 @@
+---
+title: "Geography 13"
+author: "[Lauren Whightsil](https://github.com/laurenwhightsil)"
+subtitle: 'Lab 04: Tesselations, Point-in-Polygon'
+output:
+  html_document:
+    theme: journal
+---
+```{r, package-options, warning=FALSE, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(sf)
+library(USAboundaries)
+library(knitr)
+library(units)
+library(gghighlight)
+library(ggplot2)
+library(dplyr)
+library(leaflet)
+library(readxl)
+```
+
+# Question 1: Preparing Tesselated Surfaces from CONUS and Writing a Function to Plot Them
+```{r, warning=FALSE, message=FALSE}
+#Step 1.1 - CONUS counties in an equal area projection
+counties <- USAboundaries::us_counties() %>% filter(!state_name %in% c("Hawaii", "Puerto Rico", "Alaska", "Guam")) %>%
+  st_transform(5070) %>% st_as_sf()
+
+#Step 1.2 - Country centroids as a MULTIPOINT feature
+centroids <- counties %>% st_centroid()
+nrow(centroids)
+
+cent_union <- centroids %>% st_union()
+
+#Step 1.3 - Creating CONUS surfaces of tessellations and coverages
+#a.) Voronoi tessellation over county centroids
+voronois <-  st_voronoi(cent_union) %>% 
+  st_cast() %>%
+  st_as_sf() %>% 
+  mutate(id= 1:n()) 
+
+#b.) Triangulated tessellation over county centroids
+triang <-  st_triangulate(cent_union) %>% 
+  st_cast() %>%
+  st_as_sf() %>% 
+  mutate(id= 1:n()) 
+
+#c.) Square grid coverage with n=70, over county centroids
+grid <- st_make_grid(centroids, n=70) %>% 
+  st_cast() %>% 
+  st_as_sf() %>% 
+  mutate(id= 1:n()) 
+
+#d.) Hexagonal coverage with n=70, over county centroids
+hex <- st_make_grid(centroids, square= FALSE, n=70) %>% 
+  st_cast() %>% 
+  st_as_sf() %>% 
+  mutate(id= 1:n()) 
+
+#Step 1.4 - Intersecting the surfaces to fit the boundaries of CONUS
+boundary <- counties %>% st_union()
+
+voronois1.4<- voronois %>% st_intersection(boundary)
+plot(voronois1.4)
+
+triang1.4 <- triang %>% st_intersection(boundary)
+plot(triang1.4)
+
+grid1.4 <- grid %>% st_intersection(boundary)
+plot(grid1.4)
+
+hex1.4 <- hex %>% st_intersection(boundary)
+plot(hex1.4)
+
+#Step 1.5 - Simplifying the CONUS border to decrease geometry complexity and computation time
+simpbound <- boundary %>% rmapshaper::ms_simplify(keep=.025)
+mapview::npts(boundary)-mapview::npts(simpbound)
+#Simplified boundary has 3148 fewer points than unsimplified unioned border
+
+voronois1.5 <- voronois %>% st_intersection(simpbound)
+plot(voronois1.5)
+
+triang1.5 <- triang %>% st_intersection(simpbound)
+plot(triang1.5)
+
+#Step 1.6 - Writing a function to plot tessellations
+plot_tess = function(arg1, arg2){
+  ggplot() +
+    geom_sf(data= arg1, fill= "white", col="navy", size= 0.2) +
+    theme_void() +
+    labs(title= arg2, caption=paste("This tesselation has", nrow(arg1), "tiles")) +
+    theme(plot.title= element_text(hjust= 0.5, color="navyblue", face= "bold"))
+}
+
+#Step 1.7 - Plotting tessellations using a the written function
+plot_tess(voronois1.5, "Voronoi Tessellation of Counties in the Contiguous US")
+plot_tess(triang1.5, "Triangulated Tessellation of Counties in the Contiguous US")
+plot_tess(grid1.4, "Square Grid of the Contiguous US")
+plot_tess(hex1.4, "Hexagonal Grid of the Contiguous US")
+plot_tess(counties, "Original Counties")
+```
+# Question 2: Writing a function to summarize tessellated surfaces
+```{r, warning=FALSE, message=FALSE}
+# Step 2.1 - Writing a data.frame function with arguments of simple feature and character string
+sum_tess = function(arg1, arg2){
+  area= st_area(arg1)
+  area= set_units(area,"km^2")
+  area= as.numeric(area)
+  data.frame("Description"= arg2, 
+             "Number of features"= mapview::npts(arg1), 
+             "Mean Area of features (km^2)"= mean(area), 
+             "Standard Deviation of features"= sd(area), 
+             "Total Area (km^2)"= sum(area))
+}
+
+# Step 2.2 - Use the data.frame function created
+v2.2 <- sum_tess(voronois1.5, "Voronoi")
+t2.2 <- sum_tess(triang1.5, "Delaunay Triangulation")
+g2.2 <- sum_tess(grid1.4, "Square Grid")
+h2.2 <- sum_tess(hex1.4, "Hexagonal Grid")
+c2.2 <- sum_tess(counties, "Original Counties")
+
+# Step 2.3 - Bind the data.frames row-wise
+tess_summary= bind_rows(v2.2, t2.2, g2.2, h2.2, c2.2)
+
+# Step 2.4 - Table of the bound summaries
+knitr::kable(tess_summary, caption= "Tessellations, Coverages, and Raw Counties in the Contiguous US", col.names = c("Description", "Number of features", "Mean Area of features (km^2)", "Standard Deviation of features", "Total Area (km^2)")) %>%
+   kableExtra::kable_styling("striped", full_width = TRUE, font_size = 14)
+
+# Step 2.5 - Analysis of each tessellation and coverage
+#The Voronoi tessellation spans the area nearest to each county centroid. This type of tessellation can introduce greater statistical bias (Modifiable areal unit problem), since the differing sizes of tiles can impact how the distribution of points in those polygons appear visually (through their total count and proportion of point:polygon-size). This also occurs in triangulations. Delaunay triangles bisect counties, as they are triangulations formed from the intersecting circumcenters. 
+#The square grid reduces the edge effect. The uniform grid boundary shape and size of tiles allows for a greater understanding of the areal distribution of the spatial data within those tiles. 
+#The hexagonal grid also has these advantages, in addition to tiles being located equal distances away from the center of each of its neighbors. The hexagonal grid total area is closest to that of the original counties, but it has the smallest number of features, therefore, spanning the largest mean area.
+```
+# Question 3: Distributions of dams
+```{r, warning=FALSE, message=FALSE}
+# Step 3.1 - National Dam Inventory (NID) from the US Army Corp of Engineers
+NID <- read_excel("../data/NID2019_U.xlsx") %>%
+  filter(!is.na(LONGITUDE)) %>%
+  filter(!is.na(LATITUDE)) %>%
+  st_as_sf(coords=c("LONGITUDE", "LATITUDE"), crs=4326) %>%
+  st_transform(5070)
+
+# Step 3.2 - Writing a point-in-polygon(pip) function
+PIP <- function(points, polygons, arg3){
+  st_join(polygons, points) %>% 
+    count(get(arg3))
+}
+
+# Step 3.3 - Applying P.I.P. function
+voronois_pip=PIP(NID, voronois1.5, "id")
+
+triang_pip=PIP(NID, triang1.5, "id")
+
+grid_pip=PIP(NID, grid1.4,"id")
+
+hex_pip=PIP(NID, hex1.4, "id")
+
+counties_pip=PIP(NID, counties, "geoid")
+
+# Step 3.4 - Extending the P.I.P. function
+pip_extend <- function(arg1, arg2){
+  ggplot() +
+    geom_sf(data=arg1, col=NA, aes(fill=n)) +
+    scale_fill_viridis_c() +
+    theme_void() +
+    labs(title=arg2,
+         caption=paste("This tesselation has", sum(arg1$n), "dams.")) +
+    theme(plot.title = element_text(hjust = 0.5, face="bold"))
+}
+# Step 3.5 - Apply pip_extend function to the 5 tessellated surfaces
+pip_extend(voronois_pip, "Number of Dams Across Voronoi Tessellation of the US")
+pip_extend(triang_pip, "Number of Dams Across Delaunay Triangulation of the US")
+pip_extend(grid_pip, "Number of Dams Across Square Grid Coverage of the US")
+pip_extend(hex_pip, "Number of Dams Across Hexagonal Coverage of the US")
+pip_extend(counties_pip, "Number of Dams Across US Counties")
+
+# Step 3.6 - Visualization of point counts, the MAUP problem, and Selecting a Tessellation
+#The Voronoi and Triangulated tessellations make it appear that there are more dams located on the Western United States than appear in either of the grid coverages. This can be explained by the MAUP problem. The county areas- and therefore tessellations- tend to be larger on the West Coast and decrease moving east. Since they cover a larger area, more dams are included in their tiles. Smaller polygons on the east coast may have the same amount of dams, but because they fill a smaller area of the map, the visualization of the distribution of dams is less distinct.
+
+#Moving forward in this analysis, I will only use the hexagonal grid coverage, since the equal sized polygons allows the viewer to better understand the count and distribution of dams.
+```
+# Question 4: Point-in-polygon analysis of dams
+```{r, warning=FALSE, message=FALSE}
+# Step 4.1 - Create pip counts for several dam purposes
+# I selected the first 3 purposes- Recreation (R), Flood Control(C), and Fire Protection (P) because they comprise the largest number of dams. I also selected Irrigation (I) and Hydroelectric (H), as those two serve the purposes the NID ranks as having the greatest importance.
+
+dam_freq<-function(arg1, arg2){
+  arg2 %>% filter(grepl(arg1, arg2$PURPOSES))
+}
+
+R<-dam_freq("R", NID)
+C<-dam_freq("C", NID)
+P<-dam_freq("P", NID)
+I<-dam_freq("I", NID)
+H<-dam_freq("H", NID)
+
+R_pip=PIP(R, hex1.4, "id")
+C_pip=PIP(C, hex1.4, "id")
+P_pip=PIP(P, hex1.4, "id")
+I_pip=PIP(I, hex1.4, "id")
+H_pip=PIP(H, hex1.4, "id")
+
+# Step 4.2 - Plot and highlight tiles with the most dams of each purpose
+
+pip_extend2<- function(arg1, arg2){
+  ggplot() +
+    geom_sf(data=arg1, col=NA, aes(fill=n)) +
+    scale_fill_viridis_c() +
+    gghighlight(n > ((mean(n)+sd(n)))) +
+    theme_void() +
+    labs(title=arg2,
+         caption=paste("This tesselation has", sum(arg1$n), "dams.")) +
+    theme(plot.title = element_text(hjust = 0.5, face="bold"))
+}
+pip_extend2(R_pip, "US Dams for Recreation")
+pip_extend2(C_pip, "US Dams for Flood Control")
+pip_extend2(P_pip, "US Dams for Fire Protection")
+pip_extend2(I_pip, "US Dams for Irrigation")
+pip_extend2(H_pip, "US Dams for Hydroelectric Energy Generation")
+
+# Step 4.3 - Analysis of the geographic distribution of dams for each purpose
+
+#The use of a hexagonal grid coverage for the point-in-polygon NID dam maps visualizes the findings over neighboring tiles of uniform areas, so that the count of dams for a specified purpose can be visualized without the bias of differing county sizes.
+#Dams for Recreation are located mostly in states along the East Coast, where there are many lakes.
+#Flood Control dams are located along the Mississippi River between Arkansas, Mississippi, and Tennessee. The majority of them lie central to the US in Nebraska, Kansas, Oklahoma, and Texas, as those states have many lakes and rivers, but flatter elevation that can be prone to flooding.
+#Fire Protection dams are located central to the US and in Montana and Wyoming, where a large majority of the population are at risk of wildfire.
+#Irrigation dams are dispersed throughout the US, primarily in the Northwest, Central-Northwest, Texas, and the Southeast states (excluding Florida).
+#Hydroelectric dams are located mostly along the Northern parts of the West and East Coast, especially in the Northeastern tip of the US spanning from New York to Maine. The large quantity and lengths of rivers and the abundance of basalt nearby for constructing the dams make these locations ideal for hydroelectric energy generation dams.
+```
+Extra Credit: Identify the largest, at risk, flood control dams in the United States
+```{r, warning=FALSE, message=FALSE}
+Miss<-read_sf("../data/majorrivers_0_0-2") %>% filter(SYSTEM=="Mississippi") %>% st_as_sf(coords= c("Longitude", "Latitude"), crs= 4326)
+
+lrg_haz_states<-NID %>% group_by(STATE) %>% filter(HAZARD=="H") %>% arrange(-NID_STORAGE) %>% slice_head(n=1) %>% select("DAM_NAME", "NID_STORAGE", "PURPOSES", "YEAR_COMPLETED") %>% st_transform(4326)
+
+leaflet() %>% 
+  addProviderTiles(providers$Stamen.TopOSMRelief) %>% 
+  addPolylines(data=Miss) %>% 
+  addCircleMarkers(data=lrg_haz_states,
+                   color="red", 
+                   fillOpacity = 1,
+                   radius= ~NID_STORAGE/1500000,
+                   stroke= FALSE,
+                   popup = leafpop::popupTable(st_drop_geometry(lrg_haz_states[1:4]), feature.id = FALSE, row.numbers = FALSE))
+     
+```

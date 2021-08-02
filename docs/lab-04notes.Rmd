@@ -1,0 +1,43 @@
+
+# Question 3
+```{r}
+greeting <- function(name){
+  cat("Hi! My name is", name)
+  }
+
+greeting("Lauren")
+```
+```{r, 3.1}
+NID <- read_excel("../data/NID2019_U.xlsx") %>%
+  filter(!is.na(LONGITUDE)) %>%
+  filter(!is.na(LATITUDE)) %>%
+  st_as_sf(coords=c("LONGITUDE", "LATITUDE"), crs=4326) %>%
+  st_transform(5070)
+
+NID
+```
+
+```{r, 3.2}
+PIP <- function(points, polygons, id){
+  st_join(polygons, points) %>% count()  
+}
+
+st_crs(NID)
+
+polygons = voronois
+points = NID
+hi <- st_join(polygons, points) %>% dplyr::count(get("id"))
+```
+
+```{r, 3.4}
+plot_PIP <- function(data){
+  ggplot() +
+    geom_sf(data=data, aes(fill=n), size=.2, col=NA) +
+    scale_fill_viridis_c() +
+    theme_void() +
+    labs(title= title, caption=sum(data$n))
+}
+
+plot_PIP(vor, "Voronoi Tessellation")
+```
+
