@@ -100,6 +100,7 @@ plot_tess(grid1.4, "Square Grid of the Contiguous US")
 plot_tess(hex1.4, "Hexagonal Grid of the Contiguous US")
 plot_tess(counties, "Original Counties")
 ```
+
 # Question 2: Writing a function to summarize tessellated surfaces
 ```{r, warning=FALSE, message=FALSE}
 # Step 2.1 - Writing a data.frame function with arguments of simple feature and character string
@@ -229,7 +230,8 @@ pip_extend2(H_pip, "US Dams for Hydroelectric Energy Generation")
 #Irrigation dams are dispersed throughout the US, primarily in the Northwest, Central-Northwest, Texas, and the Southeast states (excluding Florida).
 #Hydroelectric dams are located mostly along the Northern parts of the West and East Coast, especially in the Northeastern tip of the US spanning from New York to Maine. The large quantity and lengths of rivers and the abundance of basalt nearby for constructing the dams make these locations ideal for hydroelectric energy generation dams.
 ```
-Extra Credit: Identify the largest, at risk, flood control dams in the United States
+
+# Extra Credit: Identify the largest, at risk, flood control dams in the United States
 ```{r, warning=FALSE, message=FALSE}
 Miss<-read_sf("../data/majorrivers_0_0-2") %>% filter(SYSTEM=="Mississippi") %>% st_as_sf(coords= c("Longitude", "Latitude"), crs= 4326)
 
